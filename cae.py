@@ -1,26 +1,18 @@
 import keras
-import matplotlib.pyplot as plt
 import numpy as np
 import os
-# import tensorflow as tf
 import urllib.request
 
 from keras.callbacks import ModelCheckpoint
 from keras.datasets import mnist
 from keras.layers import Conv2D,Dense,Dropout,Flatten,Input,MaxPooling2D,Reshape,UpSampling2D
 from keras.models import Model
-from keras.activations import relu, linear
+from keras.activations import relu, linear, sigmoid, tanh
 
-from hyperopt import Trials, STATUS_OK, tpe
-from hyperas import optim
-from hyperas.distributions import choice
+import talos as ta
 
 # Constants
 NB_INSTANCES = 5000
-IMG_ROWS, IMG_COLS = 28, 28
-INPUT_SHAPE = (IMG_ROWS,IMG_COLS,1)
-BATCH_SIZE = 400
-EPOCHS = 5
 DATA_PATH = 'data/quickdraw/'
 DATA_CLASSES = ['bat.npy','bird.npy','cake.npy','house.npy','monkey.npy','pizza.npy','saxophone.npy']
 CHECKPOINTS_PATH = 'checkpoints/'
@@ -65,29 +57,29 @@ def use_checkpoints(path, file_name):
     return ModelCheckpoint(path + file_name, monitor='loss', verbose=1, save_best_only=True, mode='auto')
 
 # Create the model
-def model(X_train, Y_train, X_test, Y_test):
-    input_img = Input(shape=INPUT_SHAPE)
+def model(images_train, labels_train, images_test, labels_test, params):
+    input_img = Input(shape=(28,28,1))
 
-    x = Conv2D(32, (3, 3), activation='relu', padding='same')(input_img)
+    x = Conv2D(params['first_Conv2D_dim'], (3, 3), activation='relu', padding='same')(input_img)
     x = MaxPooling2D((2, 2), padding='same')(x)
 
     # x = Dropout(0.5)(x)
-    x = Conv2D(16, (3, 3), activation='relu', padding='same')(x)
+    x = Conv2D(8, (3, 3), activation='relu', padding='same')(x)
     x = MaxPooling2D((2, 2), padding='same')(x)
 
     x = Flatten()(x)
 
-    encoded = Dense(2, activation={{choice(['relu', 'sigmoid'])}})(x)
+    encoded = Dense(2, activation=params['encoded_activation'])(x)
 
-    x = Dense(392*2, activation='relu')(encoded)
-    x = Reshape((7,7,16))(x)
+    x = Dense(392, activation='relu')(encoded)
+    x = Reshape((7,7,8))(x)
 
     x = UpSampling2D((2, 2))(x)
-    x = Conv2D(16, (3, 3), activation='relu', padding='same')(x)
+    x = Conv2D(8, (3, 3), activation='relu', padding='same')(x)
 
     # x = Dropout(0.5)(x)
     x = UpSampling2D((2, 2))(x)
-    x = Conv2D(32, (3, 3), activation='relu', padding='same')(x)
+    x = Conv2D(params['first_Conv2D_dim'], (3, 3), activation='relu', padding='same')(x)
 
     decoded = Conv2D(1, (3, 3), activation='sigmoid', padding='same')(x)
 
@@ -95,28 +87,34 @@ def model(X_train, Y_train, X_test, Y_test):
     autoencoder = Model(input_img, decoded)
 
     # autoencoder.load_weights(CHECKPOINTS_PATH + 'cae_model_adam_mse_30.hdf5')
-    autoencoder.compile(optimizer='adam', loss='mean_squared_error', metrics=['accuracy'])
+    autoencoder.compile(optimizer='adam', 
+	                    loss='mean_squared_error', 
+						metrics=['accuracy'])
 
     # Train the model
-    autoencoder.fit(images_train,images_train,
-                    epochs=EPOCHS,
-                    batch_size=BATCH_SIZE,
-                    shuffle=True,
-                    verbose = 1,
-                    validation_split=0.33,
-                    callbacks=[use_checkpoints(CHECKPOINTS_PATH, CHECKPOINTS_NAME)]
-                   )
+    history = autoencoder.fit(images_train,images_train,
+                              epochs=10,
+                              batch_size=params['batch_size'],
+                              shuffle=True,
+                              verbose = 1,
+                              validation_split=0.33
+                              )
     
-    score, acc = autoencoder.evaluate(X_test, Y_test, verbose = 1)
-    return {'loss': -acc, 'status': STATUS_OK, 'encoder': encoder, 'autoencoder': autoencoder}
+    return history, autoencoder
 
 # Load dataset
 # images_train, labels_train = load_quickdraw(DATA_PATH, DATA_CLASSES, NB_INSTANCES)
 images_train, labels_train, images_test, labels_test = load_mnist()
 
-best_run, best_model = optim.minimize(model=model,
-                                      data=load_mnist,
-                                      algo=tpe.suggest,
-                                      max_evals=1,
-                                      trials=Trials(),
-                                      verbose=False)
+params = {'first_Conv2D_dim':[16, 32],
+          'encoded_activation':[relu, linear, sigmoid, tanh],
+		  'batch_size':[200,400]}
+
+t = ta.Scan(x=images_train,
+            y=images_train,
+            model=model,
+            grid_downsample=1, 
+            params=params,
+            dataset_name='mnist',
+            experiment_no='1',
+            functional_model=True)
