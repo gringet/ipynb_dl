@@ -64,22 +64,24 @@ def model(images_train, labels_train, images_test, labels_test, params):
     x = MaxPooling2D((2, 2), padding='same')(x)
 
     # x = Dropout(0.5)(x)
-    x = Conv2D(8, (3, 3), activation='relu', padding='same')(x)
+    x = Conv2D(params['second_Conv2D_dim'], (3, 3), activation='relu', padding='same')(x)
     x = MaxPooling2D((2, 2), padding='same')(x)
 
-    x = Flatten()(x)
+    x = Flatten()
+	x = Dense(params['dense_dim'], activation='relu')(x)
 
-    encoded = Dense(2, activation=params['encoded_activation'])(x)
+    encoded = Dense(2, activation='linear')(x)
 
-    x = Dense(392, activation='relu')(encoded)
-    x = Reshape((7,7,8))(x)
+	x = Dense(params['dense_dim'], activation='relu')(x)
+	
+    x = Dense(49*params['second_Conv2D_dim'], activation='relu')(encoded)
+    x = Reshape((7,7,params['second_Conv2D_dim']))(x)
 
-    x = UpSampling2D((2, 2))(x)
-    x = Conv2D(8, (3, 3), activation='relu', padding='same')(x)
-
-    # x = Dropout(0.5)(x)
-    x = UpSampling2D((2, 2))(x)
+    x = Conv2D(params['second_Conv2D_dim'], (3, 3), activation='relu', padding='same')(x)
+	x = UpSampling2D((2, 2))(x)
+    
     x = Conv2D(params['first_Conv2D_dim'], (3, 3), activation='relu', padding='same')(x)
+	x = UpSampling2D((2, 2))(x)
 
     decoded = Conv2D(1, (3, 3), activation='sigmoid', padding='same')(x)
 
@@ -106,8 +108,10 @@ def model(images_train, labels_train, images_test, labels_test, params):
 # images_train, labels_train = load_quickdraw(DATA_PATH, DATA_CLASSES, NB_INSTANCES)
 images_train, labels_train, images_test, labels_test = load_mnist()
 
-params = {'first_Conv2D_dim':[16, 32],
-          'encoded_activation':[relu, linear, sigmoid, tanh],
+params = {'first_Conv2D_dim':[8, 16, 32, 64],
+		  'second_Conv2D_dim':[8, 16, 32, 64],
+		  'dense_dim':[256, 512, 1024, 1536, 2048],
+          'encoded_activation':[linear],
 		  'batch_size':[200,400]}
 
 t = ta.Scan(x=images_train,
